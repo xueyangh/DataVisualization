@@ -1,0 +1,240 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Seattle Incident Map</title>
+    <style>
+        * {
+            padding: 0;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="map_canvas"></div>
+</body>
+<script src="//d3js.org/d3.v4.min.js" charset="utf-8"></script>
+<script src="//maps.googleapis.com/maps/api/js?v=3.exp&libraries=visualization,geometry"></script>
+<script type="text/javascript">
+    var map;
+    var heatmap;
+    var latlngData = [];
+    var MVClatlngData = new google.maps.MVCArray(latlngData);
+    var infowindow = new google.maps.InfoWindow();
+    var desiredRadiusPerPointInMeters = 500;
+
+    function initMap() {
+        // setup some options
+        var mapCenterLatLong = new google.maps.LatLng(47.608013, -122.335167);
+
+        // create the map, in the DIV defined, using the options set just above.
+        var div = document.getElementsByTagName("body")[0];
+        div.style.height = window.self.innerHeight + "px";
+        div.style.width = window.self.innerWidth + "px";
+        map = new google.maps.Map(div, {
+            center: mapCenterLatLong,
+            zoom: 12,
+            minZoom: 11,
+            maxZoom: 17,
+            // mapTypeId: google.maps.MapTypeId.ROADMAP
+            mapTypeId: google.maps.MapTypeId.TERRAIN	// other options
+            // mapTypeId: google.maps.MapTypeId.SATELLITE
+            // mapTypeId: google.maps.MapTypeId.HYBRID
+        });
+        
+//        map.data.setStyle(function(feature) {
+//            return {
+//                icon: {
+//                    path: google.maps.SymbolPath.CIRCLE,
+//                    scale: getWeight(feature)*10,
+//                    fillColor: 'red',
+//                    fillOpacity: .2,
+//                    strokeColor: 'white',
+//                    strokeWeight: .5
+//                }
+//            };
+//        });
+        
+        google.maps.event.addListener(map, 'click', function() {
+            infowindow.close();
+        });
+        
+        google.maps.event.addListener(map, 'zoom_changed', function () {
+            if (map.getZoom() > 15) {
+                window.parent.hideButton(false);
+            } else {
+                mapType('heatmap');
+                window.parent.hideButton(true);
+                heatmap.setOptions({radius:getNewRadius()});
+            }
+        });
+    }
+        
+//    function getWeight(feature) {
+//        var type = feature.getProperty('summary_offense_code');
+//        var magnitude = 1;
+//        if (type == '1200') {
+//            magnitude = 2;
+//        } else if (type == '1300') {
+//            magnitude = 100;
+//        } else if (type == '2200') {
+//            magnitude = 1;
+//        } else if (type == '2400') {
+//            magnitude = 1;
+//        } else if (type == '3500') {
+//            magnitude = 5;
+//        } else if (type == '5000') {
+//            magnitude = 1;
+//        } else if (type == 'X') {
+//            magnitude = 7;
+////        } else {
+////            magnitude =  -1;
+//        }
+//        return magnitude;
+//    }
+    
+    var TILE_SIZE = 256;
+    //Mercator --BEGIN--
+    function bound(value, opt_min, opt_max) {
+        if (opt_min !== null) value = Math.max(value, opt_min);
+        if (opt_max !== null) value = Math.min(value, opt_max);
+        return value;
+    }
+
+    function degreesToRadians(deg) {
+        return deg * (Math.PI / 180);
+    }
+
+    function radiansToDegrees(rad) {
+        return rad / (Math.PI / 180);
+    }
+
+    function MercatorProjection() {
+        this.pixelOrigin_ = new google.maps.Point(TILE_SIZE / 2,
+        TILE_SIZE / 2);
+        this.pixelsPerLonDegree_ = TILE_SIZE / 360;
+        this.pixelsPerLonRadian_ = TILE_SIZE / (2 * Math.PI);
+    }
+    MercatorProjection.prototype.fromLatLngToPoint = function (latLng, opt_point) {
+        var me = this;
+        var point = opt_point || new google.maps.Point(0, 0);
+        var origin = me.pixelOrigin_;
+
+        point.x = origin.x + latLng.lng() * me.pixelsPerLonDegree_;
+
+        // NOTE(appleton): Truncating to 0.9999 effectively limits latitude to
+        // 89.189.  This is about a third of a tile past the edge of the world
+        // tile.
+        var siny = bound(Math.sin(degreesToRadians(latLng.lat())), -0.9999, 0.9999);
+        point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) * -me.pixelsPerLonRadian_;
+        return point;
+    };
+
+    MercatorProjection.prototype.fromPointToLatLng = function (point) {
+        var me = this;
+        var origin = me.pixelOrigin_;
+        var lng = (point.x - origin.x) / me.pixelsPerLonDegree_;
+        var latRadians = (point.y - origin.y) / -me.pixelsPerLonRadian_;
+        var lat = radiansToDegrees(2 * Math.atan(Math.exp(latRadians)) - Math.PI / 2);
+        return new google.maps.LatLng(lat, lng);
+    };
+    
+    function getNewRadius() {
+        var numTiles = 1 << map.getZoom();
+        var center = map.getCenter();
+        var moved = google.maps.geometry.spherical.computeOffset(center, 10000, 90); /*1000 meters to the right*/
+        var projection = new MercatorProjection();
+        var initCoord = projection.fromLatLngToPoint(center);
+        var endCoord = projection.fromLatLngToPoint(moved);
+        var initPoint = new google.maps.Point(
+            initCoord.x * numTiles,
+            initCoord.y * numTiles);
+        var endPoint = new google.maps.Point(
+            endCoord.x * numTiles,
+            endCoord.y * numTiles);
+        var pixelsPerMeter = (Math.abs(initPoint.x-endPoint.x))/10000.0;
+        var totalPixelSize = Math.floor(desiredRadiusPerPointInMeters*pixelsPerMeter);
+        return totalPixelSize;
+    }
+    
+    function mapType(type) {
+        if (type == 'normal') {
+            heatmap.setMap(null);
+            map.data.setMap(map);
+        } else if (type == 'heatmap') {
+            heatmap.setMap(map);
+            map.data.setMap(null);
+        }
+    }
+    
+    function setLatlngData(feature) {
+        // define a single marker (a pin point on the map)
+        var lat = feature.getProperty('latitude');
+        var lng = feature.getProperty('longitude');
+        var myLatLong = new google.maps.LatLng(lat,lng);
+//        var myWeight = getWeight(feature);
+        latlngData.push({
+            location: myLatLong,
+//            weight: myWeight
+        });
+    }
+    
+    function getData(d) {
+      latlngData = [];
+      map.data.forEach(function(feature) {
+          //filter...
+          map.data.remove(feature);
+      });
+      if( typeof( MVClatlngData )=='object' ) MVClatlngData.clear();
+      
+      var query = "//data.seattle.gov/resource/y7pv-r3kh.geojson?$$app_token=1nVvKCFSBCGAFZgljZxgda1iz&$limit=1000000";
+      if (d.month != "" && d.year != "") {
+        query += "&$where=year="+d.year;
+        query += " AND month="+d.month;
+      } else {
+        var fromDate = "2016-09-01";
+        query += "&$where=date_reported>'"+fromDate+"'";
+      }
+      if (d.offenses.length != 0) {
+        query += " AND (";
+        query += "summarized_offense_description='" + d.offenses[0] + "'";
+        for (var i = 1; i < d.offenses.length; i++) {
+          query += " OR summarized_offense_description='" + d.offenses[i] + "'";
+        }
+        query += ")";
+      }
+      d3.json(query, function (data) {
+        loadData(data);
+        console.log(data.features.length);
+      });
+    }
+    
+    function loadData(data) {
+        map.data.addGeoJson(data);
+
+        map.data.addListener('click', function(event) {
+          var content = event.feature.getProperty('summarized_offense_description');
+          content += "<br>" + event.feature.getProperty('year') + "/" + event.feature.getProperty('month');
+            infowindow.setContent(content);
+            infowindow.setPosition(event.latLng);
+            infowindow.setOptions({
+                pixelOffset: new google.maps.Size(0,0)
+            });
+            infowindow.open(map);
+        });
+        
+        map.data.forEach(function(feature) {
+            setLatlngData(feature);
+        });
+        MVClatlngData = new google.maps.MVCArray(latlngData);
+
+        heatmap = new google.maps.visualization.HeatmapLayer({
+            data: MVClatlngData,
+            radius: getNewRadius()
+        });
+        mapType('heatmap');
+    }
+    
+    google.maps.event.addDomListener(window, 'load', initMap);
+</script>
+</html>

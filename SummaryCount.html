@@ -1,0 +1,192 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>SummaryCount</title>
+    
+	<style>
+    .bar{
+      fill: steelblue;
+    }
+
+    .bar:hover{
+      fill: yellow;
+    }
+
+    .bar.selected{
+      fill: darkred;
+    }
+
+    .axis {
+      font: 11px sans-serif;
+    }
+
+    .axis path,
+    .axis line {
+      fill: none;
+      stroke: #000;
+      shape-rendering: crispEdges;
+    }
+    
+    .d3-tip{
+      padding: 0px 5px;
+      color: floralwhite;
+      font-size: 13px;
+      font-weight: bold;
+      width: auto;
+      max-width: 100px;
+      border-radius: 2px;
+      text-align: center;
+      background: rgba(0, 100, 0, 0.8);
+    }
+	</style>
+  <script src="//d3js.org/d3.v3.min.js"></script>
+  <script src="http://labratrevenge.com/d3-tip/javascripts/d3.tip.v0.6.3.js"></script>
+</head>
+<body>
+<!--
+<button type="button" onclick="sort('month')">Sort By Month</button>
+<button type="button" onclick="sort('count')">Sort By Number of Records</button>
+-->
+</body>
+<script>
+//function sort(filter) {
+//    var query = "?$select=month,count(month)";
+//    query += "&$where=year=" + year;
+//    query += "&$group=month&$order=";
+//    
+//    if (filter == 'month') {
+//        query += "month";
+//    } else if (filter == 'count') {
+//        query += "count(month)DESC";
+//    }
+//    loadData(query);
+//}
+
+// set the dimensions of the canvas
+var margin = {top: 15, right: 10, bottom: 20, left: 45};
+var width, height;
+
+
+// set the ranges
+var x, y;
+
+// define the axis
+var xAxis, yAxis;
+    
+function init() {
+  var div = document.getElementsByTagName("body")[0];
+  div.style.height = window.self.innerHeight + "px";
+  div.style.width = window.self.innerWidth + "px";
+  
+  height = window.self.innerHeight - margin.top - margin.bottom;
+  width = window.self.innerWidth - margin.left - margin.right;
+  
+  x = d3.scale.ordinal().rangeRoundBands([0, width], .05);
+  y = d3.scale.linear().range([height, 0]);
+  
+  xAxis = d3.svg.axis()
+    .scale(x)
+    .orient("bottom");
+  yAxis = d3.svg.axis()
+    .scale(y)
+    .orient("left")
+    .ticks(10);
+}
+  
+function loadData(d) {
+  d3.select("svg").remove()
+  // add the SVG element
+  var svg = d3.select("body").append("svg")
+      .attr("width", width + margin.left + margin.right)
+      .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+      .attr("transform", 
+            "translate(" + margin.left + "," + margin.top + ")");
+  // load the data
+  var query = "//data.seattle.gov/resource/y7pv-r3kh.json?$select=summarized_offense_description,count(summarized_offense_description) as count&$group=summarized_offense_description&$order=summarized_offense_description";
+  if (d.month != "" && d.year != "") {
+    query += "&$where=year="+d.year;
+    query += " AND month="+d.month;
+  } else {
+    var fromDate = "2016-09-01";
+    query += "&$where=date_reported>'"+fromDate+"'";
+  }
+  d3.json(query, function(error, data) {
+      
+    data.forEach(function(d) {
+//      d.year = d.year;
+//      d.month = d.month;
+      d.column = d.summarized_offense_description;
+      d.count = +d.count;
+    });
+
+    // scale the range of the data
+    x.domain(data.map(function(d) { return d.column; }));
+    y.domain([0, d3.max(data, function(d) { return d.count; })]);
+
+    // add axis
+    svg.append("g")
+      .attr("class", "x axis")
+      .attr("transform", "translate(0," + height + ")")
+      .call(xAxis)
+    .selectAll("text")
+//      .style("text-anchor", "middle")
+//      .attr("dy", "1em");
+      .remove();
+
+    svg.append("g")
+      .attr("class", "y axis")
+      .call(yAxis)
+    .append("text")
+      .attr("dx", ".5em")
+      .attr("dy", "-.5em")
+      .style("text-anchor", "end")
+      .text("#Records");
+
+    var tip = d3.tip()
+      .attr('class', 'd3-tip')
+      .offset([-10, 0])
+      .html(function(d) {
+        return d.column;
+      })
+
+    svg.call(tip);
+    
+    // Add bar chart
+    svg.selectAll("bar")
+      .data(data)
+    .enter().append("rect")
+      .attr("class", "bar")
+      .attr("x", function(d) { return x(d.column); })
+      .attr("width", x.rangeBand())
+      .attr("y", function(d) { return y(d.count); })
+      .attr("height", function(d) { return height - y(d.count); })
+      .on("click", function(d) {
+        var checkbox = window.parent.document.getElementById(d.summarized_offense_description);
+        checkbox.checked = !checkbox.checked;
+        window.parent.changed();
+      })
+      .on('mouseover', tip.show)
+      .on('mouseout', tip.hide)
+    ;
+
+    changed(d.offenses);
+  });
+}
+
+function changed(offenses) {
+  var rects = d3.selectAll("rect");
+  rects.classed("selected", function(d) {
+    var offense = d.summarized_offense_description;
+    if (offenses.includes(offense)) {
+      return true;
+    } else {
+      return false;
+    }
+  });
+}
+
+init();
+</script>
+</html>

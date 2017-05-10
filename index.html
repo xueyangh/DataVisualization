@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Seattle Incident</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="//d3js.org/d3.v4.min.js" charset="utf-8"></script>
+</head>
+<body>
+
+<header>
+  <h1>Seattle Police Department Police Report Incident - How <span style='color:darkred'>dangerous</span> is your area?</h1>
+</header>
+
+<nav>
+  <div id="display">
+<!--
+    <button type="button" onclick="window.frames['map'].mapType('normal')">Normal</button>
+    <button type="button" onclick="window.frames['map'].mapType('heatmap')">HeatMap</button>
+-->
+    <h3>This is what you consider about:</h3>
+    <div id="mapButton">
+      <button onclick="changeMap()" class="hidden">Detail</button>
+    </div>
+    <div id="time"></div>
+    <div id="offense"></div>
+    <div id="button">
+      <button onclick="resetTime()">Reset Time</button>
+      <button onclick="resetOffense()">Reset Offense</button>
+      <button onclick="defaultOffense()">Default Offense</button>
+      <button onclick="update()">Update</button>
+    </div>
+  </div>
+<!--
+  <form name="dateForm">
+    <input type="text" name="date">
+    <button type="button" onclick="window.frames['frameName'].getDataOnDate()">GetData</button>
+  </form>
+-->
+
+  <div id="charts">
+    <iframe src="MonthCount.html" name="MonthCount" class="small"></iframe>
+    <iframe src="SummaryCount.html" name="SummaryCount" class="large"></iframe>
+  </div>
+  <div id="checkboxes">
+  </div>
+</nav>
+
+<main>
+  <iframe src="SeattleIncident.html" name="map" class="map"></iframe>
+</main>
+
+<script>
+  var month = "";
+  var year = "";
+  var selchbox = [];
+  
+  var checkboxes = d3.select("#checkboxes");
+  // load the data
+  d3.json("//data.seattle.gov/resource/y7pv-r3kh.json?$select=summarized_offense_description&$group=summarized_offense_description&$where=date_reported>'2016-09-01'&$order=summarized_offense_description", function(error, data) {
+    data.forEach(function(d) {
+      if (d.summarized_offense_description[0]!=='[') {
+        checkboxes.append("input")
+          .attr("type", "checkbox")
+          .attr("id", d.summarized_offense_description)
+          .attr("name", "offense")
+          .attr("value", d.summarized_offense_description)
+          .on("change", function() { changed(); });
+        checkboxes.append("label")
+          .attr("for", d.summarized_offense_description)
+          .text(d.summarized_offense_description);
+        checkboxes.append("br");
+      }
+    })
+  });
+  
+  function changed() {
+    if (month == "") {
+      document.getElementById("time").innerHTML = "<b>Time:</b> All time";
+    } else {
+      document.getElementById("time").innerHTML = "<b>Time:</b> " + year + "/" + month;
+    }
+    
+    var inpfields = document.getElementsByTagName('input');
+    selchbox = [];
+    for(var i=0; i<inpfields.length; i++) {
+      if(inpfields[i].type == 'checkbox' && inpfields[i].checked == true) {
+        selchbox.push(inpfields[i].value);
+      }
+    }
+    if (selchbox.length == 0) {
+      document.getElementById("offense").innerHTML = "<b>Offense:</b> All offense";
+    } else {
+      var content = "<b>Offense:</b> " + selchbox[0];
+      for (var i=1; i<selchbox.length; i++) {
+        content += ", " + selchbox[i];
+      }
+      document.getElementById("offense").innerHTML = content;
+    }
+    window.frames['SummaryCount'].changed(selchbox);
+    window.frames['MonthCount'].changed(month, year);
+  }
+  
+  function resetTime() {
+    month = "";
+    year = "";
+    changed();
+  }
+  
+  function resetOffense() {
+    var inpfields = document.getElementsByTagName('input');
+    for(var i=0; i<inpfields.length; i++) {
+      if(inpfields[i].type == 'checkbox' && inpfields[i].checked == true) {
+        inpfields[i].checked = false;
+      }
+    }
+    changed();
+  }
+  
+  function defaultOffense() {
+    resetOffense();
+    var list = ["ASSAULT", "BURGLARY", "DUI", "EXTORTION", "HOMICIDE", "ROBBERY", "WEAPON"];
+    var inpfields = document.getElementsByTagName('input');
+    for(var i=0; i<inpfields.length; i++) {
+      if(inpfields[i].type == 'checkbox' && list.includes(inpfields[i].value)) {
+        inpfields[i].checked = true;
+      }
+    }
+    changed();
+  }
+  
+  function update() {
+    var d = {};
+    d.month = month;
+    d.year = year;
+    d.offenses = selchbox;
+    window.frames['map'].getData(d);
+    window.frames['MonthCount'].loadData(d);
+    window.frames['SummaryCount'].loadData(d);
+  }
+  
+  function changeMap() {
+    var button = document.getElementById("mapButton").getElementsByTagName("button")[0];
+    if (button.innerHTML == "Detail") {
+      button.innerHTML = "Heatmap";
+      window.frames["map"].mapType('normal');
+    } else {
+      button.innerHTML = "Detail";
+      window.frames["map"].mapType('heatmap');
+    }
+  }
+  
+  function hideButton(bool) {
+    d3.select("#mapButton").select("button").classed("hidden", bool);
+  }
+  
+  setTimeout(function(){
+    defaultOffense();
+    update();
+  }, 3000);
+</script>
+
+</body>
+</html>
